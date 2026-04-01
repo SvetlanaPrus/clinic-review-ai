@@ -1,0 +1,35 @@
+# Python
+*.pyc
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+dist/
+build/
+
+# Environment
+.env
+*.env.local
+
+# Data (raw data may contain PII)
+data/raw/*
+!data/raw/.gitkeep
+
+# Reports output
+reports/*
+!reports/.gitkeep
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+docs/project-notes.md

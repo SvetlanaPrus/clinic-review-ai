@@ -127,4 +127,7 @@ def analyze_csv():
 
             sentiment_counts = Counter(sentiments)
     
-    return {"results": results}
+    return {
+    "results": results,
+    "sentiment_summary": dict(sentiment_counts)
+}

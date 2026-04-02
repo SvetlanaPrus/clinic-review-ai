@@ -120,11 +120,14 @@ def analyze_csv():
                 "analysis": parsed
             })
 
-            sentiments = []
+    sentiment_counts = Counter(
+        item["analysis"]["sentiment"]
+        for item in results
+        if isinstance(item.get("analysis"), dict)
+        and "sentiment" in item["analysis"]
+    )
 
-            for item in results:
-                sentiments.append(item["analysis"]["sentiment"])
-
-            sentiment_counts = Counter(sentiments)
-    
-    return {"results": results}
+    return {
+        "results": results,
+        "sentiment_summary": dict(sentiment_counts)
+    }

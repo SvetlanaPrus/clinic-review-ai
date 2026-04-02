@@ -123,7 +123,8 @@ def analyze_csv():
     sentiment_counts = Counter(
         item["analysis"]["sentiment"]
         for item in results
-        if "sentiment" in item["analysis"]
+        if isinstance(item.get("analysis"), dict)
+        and "sentiment" in item["analysis"]
     )
 
     return {

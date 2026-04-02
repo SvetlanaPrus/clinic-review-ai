@@ -5,6 +5,7 @@ import csv
 import os
 from dotenv import load_dotenv
 from openai import OpenAI
+from collections import Counter
 
 # load .env
 load_dotenv()
@@ -119,4 +120,11 @@ def analyze_csv():
                 "analysis": parsed
             })
 
+            sentiments = []
+
+            for item in results:
+                sentiments.append(item["analysis"]["sentiment"])
+
+            sentiment_counts = Counter(sentiments)
+    
     return {"results": results}

@@ -79,18 +79,21 @@ def analyze_csv():
 
         for row in reader:
             prompt = f"""
-Analyze this clinic review.
+            Analyze this clinic review.
 
-Return:
-- sentiment (positive, neutral, negative)
-- topics (list)
-- short summary
-- priority (low, medium, high)
-- recommended action
+            Return ONLY valid JSON with this structure:
 
-Review:
-{row["review_text"]}
-"""
+            {{
+            "sentiment": "positive | neutral | negative",
+            "topics": ["topic1", "topic2"],
+            "summary": "short summary",
+            "priority": "low | medium | high",
+            "recommended_action": "action text"
+            }}
+
+            Review:
+            {row["review_text"]}
+            """
 
             response = client.chat.completions.create(
                 model="gpt-4.1-mini",
@@ -99,9 +102,21 @@ Review:
                 ]
             )
 
+            raw_output = response.choices[0].message.content
+
+            clean_output = raw_output.strip()
+            clean_output = clean_output.replace("```json", "")
+            clean_output = clean_output.replace("```", "")
+            clean_output = clean_output.strip()
+
+            try:
+                parsed = json.loads(clean_output)
+            except:
+                parsed = {"error": "Invalid JSON from AI", "raw": raw_output}
+
             results.append({
                 "review_id": row["review_id"],
-                "analysis": response.choices[0].message.content
+                "analysis": parsed
             })
 
     return {"results": results}

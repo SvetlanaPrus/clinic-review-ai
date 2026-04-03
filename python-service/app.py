@@ -23,6 +23,8 @@ REQUIRED_COLUMNS = {"review_id", "review_text"}
 
 # In-memory job store: maps job_id -> job status and results.
 # For production, replace with a persistent store (e.g. Redis, database).
+# WARNING: this store is per-process. Run with a single worker only (uvicorn app:app --workers 1),
+# otherwise POST /analyze-csv and GET /jobs/{job_id} may hit different processes and the job will appear missing.
 jobs: dict = {}
 
 # Lock to protect jobs dict from concurrent access by request handlers and background tasks.
@@ -39,6 +41,8 @@ def evict_expired_jobs():
     with jobs_lock:
         expired = []
         for jid, job in jobs.items():
+            if job.get("status") == "processing":
+                continue  # never evict in-progress jobs; process_csv_job still holds a reference to job_id
             created_at = job.get("created_at")
             # Treat missing or invalid created_at as expired to avoid accumulation
             if not isinstance(created_at, (int, float)) or now - created_at > JOB_TTL_SECONDS:

@@ -84,7 +84,27 @@ Create a `.env` file:
 
 ```
 OPENAI_API_KEY=your_api_key_here
+
+# Optional: path to CSV file for /analyze-csv endpoint
+# Defaults to data/raw/reviews_sample.csv relative to project root
+# REVIEWS_CSV_PATH=/custom/path/to/reviews.csv
 ```
+
+## Data Setup
+
+The `/analyze-csv` endpoint requires a CSV file with the following columns:
+
+- `review_id` — unique review identifier
+- `review_text` — text of the review
+
+By default the service looks for `data/raw/reviews_sample.csv`. This directory is not tracked in git, so you need to create it manually:
+
+```bash
+mkdir -p data/raw
+# place your reviews_sample.csv inside data/raw/
+```
+
+Alternatively, set `REVIEWS_CSV_PATH` in `.env` to point to any CSV file.
 
 ---
 

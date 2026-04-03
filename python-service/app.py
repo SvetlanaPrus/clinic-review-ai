@@ -130,13 +130,15 @@ def analyze_csv():
     topics = []
 
     for item in results:
-        for topic in item["analysis"]["topics"]:
-            topics.append(topic)
+        analysis = item.get("analysis")
+        if isinstance(analysis, dict) and "topics" in analysis and isinstance(analysis["topics"], list):
+            for topic in analysis["topics"]:
+                topics.append(topic)
 
     topic_counts = Counter(topics)
 
     return {
         "results": results,
         "sentiment_summary": dict(sentiment_counts),
-        "top_topics": dict(topic_counts)
+        "top_topics": dict(topic_counts.most_common())
     }

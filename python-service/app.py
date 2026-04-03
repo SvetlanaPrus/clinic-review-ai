@@ -272,8 +272,13 @@ def get_job_results(job_id: str, page: int = Query(1, ge=1), limit: int = Query(
     if job_snapshot is None:
         raise HTTPException(status_code=404, detail=f"Job not found: {job_id}")
 
-    if job_snapshot.get("status") != "done":
-        raise HTTPException(status_code=409, detail=f"Job is not done yet: status={job_snapshot.get('status')}")
+    status = job_snapshot.get("status")
+    if status == "processing":
+        raise HTTPException(status_code=409, detail="Job is still processing")
+    if status == "failed":
+        raise HTTPException(status_code=410, detail=f"Job failed; see GET /jobs/{job_id} for failure details")
+    if status != "done":
+        raise HTTPException(status_code=409, detail=f"Job results are unavailable for status={status}")
 
     results = job_snapshot.get("results", [])
     total = len(results)

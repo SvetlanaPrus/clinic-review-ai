@@ -15,6 +15,7 @@ CSV_FILE_PATH = os.getenv("REVIEWS_CSV_PATH") or Path(__file__).resolve().parent
 OPENAI_MODEL = "gpt-4.1-mini"
 KEY_SENTIMENT = "sentiment"
 KEY_TOPICS = "topics"
+REQUIRED_COLUMNS = {"review_id", "review_text"}
 
 # init OpenAI
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
@@ -93,6 +94,9 @@ def analyze_csv():
 
     with csvfile_handle as csvfile:
         reader = csv.DictReader(csvfile)
+
+        if not REQUIRED_COLUMNS.issubset(reader.fieldnames or []):
+            raise HTTPException(status_code=400, detail=f"CSV must contain columns: {REQUIRED_COLUMNS}")
 
         for row in reader:
             analysis = analyze_with_ai(row["review_text"])

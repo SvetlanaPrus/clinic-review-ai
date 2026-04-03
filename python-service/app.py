@@ -127,7 +127,24 @@ def analyze_csv():
         and "sentiment" in item["analysis"]
     )
 
+    topics = []
+
+    for item in results:
+        analysis = item.get("analysis")
+        if isinstance(analysis, dict) and "topics" in analysis and isinstance(analysis["topics"], list):
+            for topic in analysis["topics"]:
+                if isinstance(topic, str):
+                    normalized_topic = topic.strip()
+                    if normalized_topic:
+                        topics.append(normalized_topic)
+
+    topic_counts = Counter(topics)
+
     return {
         "results": results,
-        "sentiment_summary": dict(sentiment_counts)
+        "sentiment_summary": dict(sentiment_counts),
+        "top_topics": [
+            {"topic": topic, "count": count}
+            for topic, count in topic_counts.most_common()
+        ]
     }

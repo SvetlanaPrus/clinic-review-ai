@@ -106,6 +106,31 @@ mkdir -p data/raw
 
 Alternatively, set `REVIEWS_CSV_PATH` in `.env` to point to any CSV file.
 
+## Using the /analyze endpoint
+
+Analyzes a single review synchronously.
+
+```
+POST /analyze
+```
+Request body:
+```json
+{"review_id": "123", "review_text": "Great service!"}
+```
+Success response (`200`):
+```json
+{
+  "review_id": "123",
+  "analysis": { "sentiment": "positive", "topics": ["staff"] }
+}
+```
+Error response (`502`) — when the AI call or JSON parsing fails:
+```json
+{"detail": "Invalid JSON from AI"}
+```
+
+---
+
 ## Using the /analyze-csv endpoint
 
 CSV analysis runs as a background job. The flow is:
@@ -171,14 +196,14 @@ The project is in active development.
 
 Implemented:
 
-- basic FastAPI service
-- CSV-based data input
+- FastAPI service with `/analyze` and `/analyze-csv` endpoints
+- structured JSON output from AI
+- CSV-based data input with background job processing
 - integration with OpenAI API
+- paginated per-review results
 
 Planned:
 
-- structured JSON output from AI
-- API endpoints for uploading reviews
 - integration with external review platforms
 - report visualization
 

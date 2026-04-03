@@ -213,6 +213,9 @@ def read_root():
 def analyze_review(review: Review):
     analysis = analyze_with_ai(review.review_text)
 
+    if "error" in analysis:
+        raise HTTPException(status_code=502, detail=analysis["error"])
+
     return {
         "review_id": review.review_id,
         "analysis": analysis

@@ -8,13 +8,13 @@ from openai import OpenAI
 from collections import Counter
 from pathlib import Path
 
+# load .env
+load_dotenv()
+
 CSV_FILE_PATH = os.getenv("REVIEWS_CSV_PATH") or Path(__file__).resolve().parent.parent / "data" / "raw" / "reviews_sample.csv"
 OPENAI_MODEL = "gpt-4.1-mini"
 KEY_SENTIMENT = "sentiment"
 KEY_TOPICS = "topics"
-
-# load .env
-load_dotenv()
 
 # init OpenAI
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))

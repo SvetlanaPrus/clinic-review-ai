@@ -1,8 +1,9 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, BackgroundTasks
 from pydantic import BaseModel
 import json
 import csv
 import os
+import uuid
 from dotenv import load_dotenv
 from openai import OpenAI
 from collections import Counter
@@ -17,6 +18,10 @@ KEY_SENTIMENT = "sentiment"
 KEY_TOPICS = "topics"
 REQUIRED_COLUMNS = {"review_id", "review_text"}
 
+# In-memory job store: maps job_id -> job status and results.
+# For production, replace with a persistent store (e.g. Redis, database).
+jobs: dict = {}
+
 # init OpenAI
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
@@ -27,6 +32,7 @@ class Review(BaseModel):
     review_id: str
     rating: int
     review_text: str
+
 
 def analyze_with_ai(text: str):
     prompt = f"""
@@ -63,44 +69,40 @@ Review:
     try:
         parsed = json.loads(clean_output)
     except (json.JSONDecodeError, TypeError):
-        parsed = {"error": "Invalid JSON from AI", "raw": raw_output}
+        # Log raw output server-side for debugging; do not expose it to the client
+        print(f"Failed to parse AI output: {raw_output}")
+        parsed = {"error": "Invalid JSON from AI"}
 
     return parsed
 
 
-@app.get("/")
-def read_root():
-    return {"message": "API is working"}
-
-
-@app.post("/analyze")
-def analyze_review(review: Review):
-    analysis = analyze_with_ai(review.review_text)
-
-    return {
-        "review_id": review.review_id,
-        "analysis": analysis
-    }
-
-
-@app.get("/analyze-csv")
-def analyze_csv():
-    results = []
-
+def process_csv_job(job_id: str):
+    """
+    Background task: reads the CSV and calls OpenAI for each row.
+    Results are stored in the jobs dict under the given job_id.
+    The client polls GET /jobs/{job_id} to check status and retrieve results.
+    """
     try:
         csvfile_handle = open(CSV_FILE_PATH, newline="", encoding="utf-8")
     except FileNotFoundError:
-        raise HTTPException(status_code=404, detail=f"CSV file not found: {CSV_FILE_PATH}")
+        jobs[job_id] = {"status": "failed", "error": f"CSV file not found: {CSV_FILE_PATH}"}
+        return
+
+    results = []
 
     with csvfile_handle as csvfile:
         reader = csv.DictReader(csvfile)
 
         if not REQUIRED_COLUMNS.issubset(reader.fieldnames or []):
-            raise HTTPException(status_code=400, detail=f"CSV must contain columns: {REQUIRED_COLUMNS}")
+            # Use sorted() for a stable, client-friendly column list instead of Python set repr
+            jobs[job_id] = {
+                "status": "failed",
+                "error": f"CSV must contain columns: {', '.join(sorted(REQUIRED_COLUMNS))}"
+            }
+            return
 
         for row in reader:
             analysis = analyze_with_ai(row["review_text"])
-
             results.append({
                 "review_id": row["review_id"],
                 "analysis": analysis
@@ -126,7 +128,9 @@ def analyze_csv():
 
     topic_counts = Counter(topics)
 
-    return {
+    # Store completed results so the client can retrieve them via GET /jobs/{job_id}
+    jobs[job_id] = {
+        "status": "done",
         "results": results,
         "sentiment_summary": dict(sentiment_counts),
         "top_topics": [
@@ -134,3 +138,48 @@ def analyze_csv():
             for topic, count in topic_counts.most_common()
         ]
     }
+
+
+@app.get("/")
+def read_root():
+    return {"message": "API is working"}
+
+
+@app.post("/analyze")
+def analyze_review(review: Review):
+    analysis = analyze_with_ai(review.review_text)
+
+    return {
+        "review_id": review.review_id,
+        "analysis": analysis
+    }
+
+
+@app.post("/analyze-csv")
+def analyze_csv(background_tasks: BackgroundTasks):
+    """
+    Starts CSV analysis as a background job.
+    Returns job_id immediately — client should poll GET /jobs/{job_id} for results.
+    """
+    job_id = str(uuid.uuid4())
+
+    # Mark job as processing before starting background task
+    jobs[job_id] = {"status": "processing"}
+
+    background_tasks.add_task(process_csv_job, job_id)
+
+    return {"job_id": job_id, "status": "processing"}
+
+
+@app.get("/jobs/{job_id}")
+def get_job(job_id: str):
+    """
+    Returns the current status and results of a background job.
+    Status values: "processing" | "done" | "failed"
+    """
+    job = jobs.get(job_id)
+
+    if job is None:
+        raise HTTPException(status_code=404, detail=f"Job not found: {job_id}")
+
+    return job

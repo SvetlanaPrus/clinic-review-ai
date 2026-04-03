@@ -7,6 +7,11 @@ from dotenv import load_dotenv
 from openai import OpenAI
 from collections import Counter
 
+CSV_FILE_PATH = "../data/raw/reviews_sample.csv"
+OPENAI_MODEL = "gpt-4.1-mini"
+KEY_SENTIMENT = "sentiment"
+KEY_TOPICS = "topics"
+
 # load .env
 load_dotenv()
 
@@ -21,33 +26,26 @@ class Review(BaseModel):
     rating: int
     review_text: str
 
-
-@app.get("/")
-def read_root():
-    return {"message": "API is working"}
-
-
-@app.post("/analyze")
-def analyze_review(review: Review):
+def analyze_with_ai(text: str):
     prompt = f"""
-    Analyze this clinic review.
+Analyze this clinic review.
 
-    Return ONLY valid JSON with this structure:
+Return ONLY valid JSON with this structure:
 
-    {{
-    "sentiment": "positive | neutral | negative",
-    "topics": ["topic1", "topic2"],
-    "summary": "short summary",
-    "priority": "low | medium | high",
-    "recommended_action": "action text"
-   }}
+{{
+  "sentiment": "positive | neutral | negative",
+  "topics": ["topic1", "topic2"],
+  "summary": "short summary",
+  "priority": "low | medium | high",
+  "recommended_action": "action text"
+}}
 
-    Review:
-    {review.review_text}
-    """
+Review:
+{text}
+"""
 
     response = client.chat.completions.create(
-        model="gpt-4.1-mini",
+        model=OPENAI_MODEL,
         messages=[
             {"role": "user", "content": prompt}
         ]
@@ -65,74 +63,52 @@ def analyze_review(review: Review):
     except:
         parsed = {"error": "Invalid JSON from AI", "raw": raw_output}
 
-    return {
-        "review_id": review.review_id,
-        "analysis": parsed
-}
+    return parsed
+
+
+@app.get("/")
+def read_root():
+    return {"message": "API is working"}
+
+
+@app.post("/analyze")
+def analyze_review(review: Review):
+        analysis = analyze_with_ai(review.review_text)
+
+        return {
+            "review_id": review.review_id,
+            "analysis": analysis
+        }
 
 
 @app.get("/analyze-csv")
 def analyze_csv():
     results = []
 
-    with open("../data/raw/reviews_sample.csv", newline="", encoding="utf-8") as csvfile:
+    with open(CSV_FILE_PATH, newline="", encoding="utf-8") as csvfile:
         reader = csv.DictReader(csvfile)
 
         for row in reader:
-            prompt = f"""
-            Analyze this clinic review.
-
-            Return ONLY valid JSON with this structure:
-
-            {{
-            "sentiment": "positive | neutral | negative",
-            "topics": ["topic1", "topic2"],
-            "summary": "short summary",
-            "priority": "low | medium | high",
-            "recommended_action": "action text"
-            }}
-
-            Review:
-            {row["review_text"]}
-            """
-
-            response = client.chat.completions.create(
-                model="gpt-4.1-mini",
-                messages=[
-                    {"role": "user", "content": prompt}
-                ]
-            )
-
-            raw_output = response.choices[0].message.content
-
-            clean_output = raw_output.strip()
-            clean_output = clean_output.replace("```json", "")
-            clean_output = clean_output.replace("```", "")
-            clean_output = clean_output.strip()
-
-            try:
-                parsed = json.loads(clean_output)
-            except:
-                parsed = {"error": "Invalid JSON from AI", "raw": raw_output}
+            analysis = analyze_with_ai(row["review_text"])
 
             results.append({
-                "review_id": row["review_id"],
-                "analysis": parsed
+            "review_id": row["review_id"],
+            "analysis": analysis
             })
 
     sentiment_counts = Counter(
-        item["analysis"]["sentiment"]
+        item["analysis"][KEY_SENTIMENT]
         for item in results
         if isinstance(item.get("analysis"), dict)
-        and "sentiment" in item["analysis"]
+        and KEY_SENTIMENT in item["analysis"]
     )
 
     topics = []
 
     for item in results:
         analysis = item.get("analysis")
-        if isinstance(analysis, dict) and "topics" in analysis and isinstance(analysis["topics"], list):
-            for topic in analysis["topics"]:
+        if isinstance(analysis, dict) and KEY_TOPICS in analysis and isinstance(analysis[KEY_TOPICS], list):
+            for topic in analysis[KEY_TOPICS]:
                 if isinstance(topic, str):
                     normalized_topic = topic.strip()
                     if normalized_topic:

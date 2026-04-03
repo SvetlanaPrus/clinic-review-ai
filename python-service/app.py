@@ -98,6 +98,10 @@ Review:
 
     raw_output = response.choices[0].message.content
 
+    if not raw_output:
+        logger.warning("AI returned empty or None content")
+        return {"error": "Invalid JSON from AI"}
+
     clean_output = raw_output.strip()
     clean_output = clean_output.replace("```json", "")
     clean_output = clean_output.replace("```", "")

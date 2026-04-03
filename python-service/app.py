@@ -6,6 +6,7 @@ import os
 import uuid
 import time
 import logging
+import threading
 from dotenv import load_dotenv
 from openai import OpenAI
 from collections import Counter
@@ -24,6 +25,10 @@ REQUIRED_COLUMNS = {"review_id", "review_text"}
 # For production, replace with a persistent store (e.g. Redis, database).
 jobs: dict = {}
 
+# Lock to protect jobs dict from concurrent access by request handlers and background tasks.
+# Without this, simultaneous reads/writes can cause RuntimeError: dictionary changed size during iteration.
+jobs_lock = threading.Lock()
+
 # Jobs older than this will be evicted from memory on each new request
 JOB_TTL_SECONDS = 3600  # 1 hour
 
@@ -31,9 +36,15 @@ JOB_TTL_SECONDS = 3600  # 1 hour
 def evict_expired_jobs():
     """Remove jobs older than JOB_TTL_SECONDS to prevent unbounded memory growth."""
     now = time.time()
-    expired = [jid for jid, job in jobs.items() if now - job.get("created_at", now) > JOB_TTL_SECONDS]
-    for jid in expired:
-        del jobs[jid]
+    with jobs_lock:
+        expired = []
+        for jid, job in jobs.items():
+            created_at = job.get("created_at")
+            # Treat missing or invalid created_at as expired to avoid accumulation
+            if not isinstance(created_at, (int, float)) or now - created_at > JOB_TTL_SECONDS:
+                expired.append(jid)
+        for jid in expired:
+            del jobs[jid]
 
 logger = logging.getLogger(__name__)
 
@@ -100,7 +111,8 @@ def process_csv_job(job_id: str):
     try:
         csvfile_handle = open(CSV_FILE_PATH, newline="", encoding="utf-8")
     except FileNotFoundError:
-        jobs[job_id] = {"status": "failed", "error": f"CSV file not found: {CSV_FILE_PATH}"}
+        with jobs_lock:
+            jobs[job_id] = {"status": "failed", "error": f"CSV file not found: {CSV_FILE_PATH}", "created_at": jobs[job_id].get("created_at")}
         return
 
     results = []
@@ -110,10 +122,12 @@ def process_csv_job(job_id: str):
 
         if not REQUIRED_COLUMNS.issubset(reader.fieldnames or []):
             # Use sorted() for a stable, client-friendly column list instead of Python set repr
-            jobs[job_id] = {
-                "status": "failed",
-                "error": f"CSV must contain columns: {', '.join(sorted(REQUIRED_COLUMNS))}"
-            }
+            with jobs_lock:
+                jobs[job_id] = {
+                    "status": "failed",
+                    "error": f"CSV must contain columns: {', '.join(sorted(REQUIRED_COLUMNS))}",
+                    "created_at": jobs[job_id].get("created_at")
+                }
             return
 
         try:
@@ -126,7 +140,8 @@ def process_csv_job(job_id: str):
         except Exception as e:
             # If OpenAI call fails (rate limit, network error, auth error),
             # mark job as failed so the client is not stuck polling "processing"
-            jobs[job_id] = {"status": "failed", "error": str(e)}
+            with jobs_lock:
+                jobs[job_id] = {"status": "failed", "error": str(e), "created_at": jobs[job_id].get("created_at")}
             return
 
     sentiment_counts = Counter(
@@ -150,15 +165,17 @@ def process_csv_job(job_id: str):
     topic_counts = Counter(topics)
 
     # Store completed results so the client can retrieve them via GET /jobs/{job_id}
-    jobs[job_id] = {
-        "status": "done",
-        "results": results,
-        "sentiment_summary": dict(sentiment_counts),
-        "top_topics": [
-            {"topic": topic, "count": count}
-            for topic, count in topic_counts.most_common()
-        ]
-    }
+    with jobs_lock:
+        jobs[job_id] = {
+            "status": "done",
+            "created_at": jobs[job_id].get("created_at"),
+            "results": results,
+            "sentiment_summary": dict(sentiment_counts),
+            "top_topics": [
+                {"topic": topic, "count": count}
+                for topic, count in topic_counts.most_common()
+            ]
+        }
 
 
 @app.get("/")
@@ -188,7 +205,8 @@ def analyze_csv(background_tasks: BackgroundTasks):
     job_id = str(uuid.uuid4())
 
     # Mark job as processing before starting background task
-    jobs[job_id] = {"status": "processing", "created_at": time.time()}
+    with jobs_lock:
+        jobs[job_id] = {"status": "processing", "created_at": time.time()}
 
     background_tasks.add_task(process_csv_job, job_id)
 
@@ -201,7 +219,8 @@ def get_job(job_id: str):
     Returns the current status and results of a background job.
     Status values: "processing" | "done" | "failed"
     """
-    job = jobs.get(job_id)
+    with jobs_lock:
+        job = jobs.get(job_id)
 
     if job is None:
         raise HTTPException(status_code=404, detail=f"Job not found: {job_id}")

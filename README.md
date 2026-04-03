@@ -141,7 +141,7 @@ If failed:
 {"status": "failed", "error": "..."}
 ```
 
-Jobs are automatically removed from memory after 1 hour.
+Jobs are kept in memory for status lookup. Stale jobs older than 1 hour are removed opportunistically during subsequent `POST /analyze-csv` requests, rather than by a background timer.
 
 ---
 

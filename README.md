@@ -137,7 +137,6 @@ When done:
   "job_id": "abc-123",
   "status": "done",
   "created_at": 1704067200.0,
-  "results": [...],
   "sentiment_summary": {"positive": 5, "negative": 2, "neutral": 1},
   "top_topics": [{"topic": "staff", "count": 4}, ...]
 }
@@ -145,6 +144,21 @@ When done:
 If failed:
 ```json
 {"job_id": "abc-123", "status": "failed", "created_at": 1704067200.0, "error": "..."}
+```
+
+**3. Fetch per-review results (paginated):**
+```
+GET /jobs/abc-123/results?page=1&limit=100
+```
+```json
+{
+  "job_id": "abc-123",
+  "page": 1,
+  "limit": 100,
+  "total": 250,
+  "pages": 3,
+  "results": [...]
+}
 ```
 
 Jobs are kept in memory for status lookup. Stale jobs older than 1 hour are removed opportunistically during subsequent `POST /analyze-csv` requests, rather than by a background timer.

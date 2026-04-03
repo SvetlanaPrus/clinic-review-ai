@@ -33,19 +33,24 @@ jobs_lock = threading.Lock()
 
 # Jobs older than this will be evicted from memory on each new request
 JOB_TTL_SECONDS = 3600  # 1 hour
+# Processing jobs get a longer TTL so genuinely active work is not evicted too aggressively,
+# while jobs stuck in "processing" after a crash/failure do not accumulate forever.
+PROCESSING_JOB_TTL_SECONDS = 7200  # 2 hours
 
 
 def evict_expired_jobs():
-    """Remove jobs older than JOB_TTL_SECONDS to prevent unbounded memory growth."""
+    """Remove jobs older than their allowed retention window to prevent unbounded memory growth."""
     now = time.time()
     with jobs_lock:
         expired = []
         for jid, job in jobs.items():
-            if job.get("status") == "processing":
-                continue  # never evict in-progress jobs; process_csv_job still holds a reference to job_id
             created_at = job.get("created_at")
             # Treat missing or invalid created_at as expired to avoid accumulation
-            if not isinstance(created_at, (int, float)) or now - created_at > JOB_TTL_SECONDS:
+            if not isinstance(created_at, (int, float)):
+                expired.append(jid)
+                continue
+            max_age = PROCESSING_JOB_TTL_SECONDS if job.get("status") == "processing" else JOB_TTL_SECONDS
+            if now - created_at > max_age:
                 expired.append(jid)
         for jid in expired:
             del jobs[jid]
@@ -237,11 +242,12 @@ def get_job(job_id: str):
     """
     with jobs_lock:
         job = jobs.get(job_id)
+        job_snapshot = dict(job) if job is not None else None
 
-    if job is None:
+    if job_snapshot is None:
         raise HTTPException(status_code=404, detail=f"Job not found: {job_id}")
 
-    return {k: v for k, v in job.items() if k != "results"}
+    return {k: v for k, v in job_snapshot.items() if k != "results"}
 
 
 @app.get("/jobs/{job_id}/results")
@@ -252,14 +258,15 @@ def get_job_results(job_id: str, page: int = Query(1, ge=1), limit: int = Query(
     """
     with jobs_lock:
         job = jobs.get(job_id)
+        job_snapshot = dict(job) if job is not None else None
 
-    if job is None:
+    if job_snapshot is None:
         raise HTTPException(status_code=404, detail=f"Job not found: {job_id}")
 
-    if job.get("status") != "done":
-        raise HTTPException(status_code=409, detail=f"Job is not done yet: status={job.get('status')}")
+    if job_snapshot.get("status") != "done":
+        raise HTTPException(status_code=409, detail=f"Job is not done yet: status={job_snapshot.get('status')}")
 
-    results = job.get("results", [])
+    results = job_snapshot.get("results", [])
     total = len(results)
     start = (page - 1) * limit
     end = start + limit

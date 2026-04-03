@@ -113,20 +113,32 @@ Analyzes a single review synchronously.
 ```
 POST /analyze
 ```
+
 Request body:
+
 ```json
-{"review_id": "123", "review_text": "Great service!"}
+{ "review_id": "123", "review_text": "Great service!", "rating": 5 }
 ```
+
 Success response (`200`):
+
 ```json
 {
   "review_id": "123",
-  "analysis": { "sentiment": "positive", "topics": ["staff"] }
+  "analysis": {
+    "sentiment": "positive",
+    "topics": ["staff"],
+    "summary": "Patient reported a great service experience and praised the staff.",
+    "priority": "low",
+    "recommended_action": "Share the positive feedback with the clinic team."
+  }
 }
 ```
+
 Error response (`502`) — when the AI call or JSON parsing fails:
+
 ```json
-{"detail": "Invalid JSON from AI"}
+{ "detail": "Invalid JSON from AI" }
 ```
 
 ---
@@ -136,19 +148,25 @@ Error response (`502`) — when the AI call or JSON parsing fails:
 CSV analysis runs as a background job. The flow is:
 
 **1. Start the job:**
+
 ```
 POST /analyze-csv
 ```
+
 Response:
+
 ```json
-{"job_id": "abc-123", "status": "processing"}
+{ "job_id": "abc-123", "status": "processing" }
 ```
 
 **2. Poll for results:**
+
 ```
 GET /jobs/abc-123
 ```
+
 While processing:
+
 ```json
 {
   "job_id": "abc-123",
@@ -156,7 +174,9 @@ While processing:
   "created_at": 1704067200.0
 }
 ```
+
 When done:
+
 ```json
 {
   "job_id": "abc-123",
@@ -166,15 +186,24 @@ When done:
   "top_topics": [{"topic": "staff", "count": 4}, ...]
 }
 ```
+
 If failed:
+
 ```json
-{"job_id": "abc-123", "status": "failed", "created_at": 1704067200.0, "error": "..."}
+{
+  "job_id": "abc-123",
+  "status": "failed",
+  "created_at": 1704067200.0,
+  "error": "..."
+}
 ```
 
 **3. Fetch per-review results (paginated):**
+
 ```
 GET /jobs/abc-123/results?page=1&limit=100
 ```
+
 ```json
 {
   "job_id": "abc-123",

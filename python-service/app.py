@@ -127,7 +127,16 @@ def analyze_csv():
         and "sentiment" in item["analysis"]
     )
 
+    topics = []
+
+    for item in results:
+        for topic in item["analysis"]["topics"]:
+            topics.append(topic)
+
+    topic_counts = Counter(topics)
+
     return {
         "results": results,
-        "sentiment_summary": dict(sentiment_counts)
+        "sentiment_summary": dict(sentiment_counts),
+        "top_topics": dict(topic_counts)
     }

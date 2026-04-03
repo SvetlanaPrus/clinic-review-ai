@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import json
 import csv
@@ -8,7 +8,7 @@ from openai import OpenAI
 from collections import Counter
 from pathlib import Path
 
-CSV_FILE_PATH = Path(__file__).resolve().parent.parent / "data" / "raw" / "reviews_sample.csv"
+CSV_FILE_PATH = os.getenv("REVIEWS_CSV_PATH") or Path(__file__).resolve().parent.parent / "data" / "raw" / "reviews_sample.csv"
 OPENAI_MODEL = "gpt-4.1-mini"
 KEY_SENTIMENT = "sentiment"
 KEY_TOPICS = "topics"
@@ -86,7 +86,12 @@ def analyze_review(review: Review):
 def analyze_csv():
     results = []
 
-    with open(CSV_FILE_PATH, newline="", encoding="utf-8") as csvfile:
+    try:
+        csvfile_handle = open(CSV_FILE_PATH, newline="", encoding="utf-8")
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail=f"CSV file not found: {CSV_FILE_PATH}")
+
+    with csvfile_handle as csvfile:
         reader = csv.DictReader(csvfile)
 
         for row in reader:

@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Query
 from pydantic import BaseModel
 import json
 import csv
@@ -132,35 +132,27 @@ def process_csv_job(job_id: str):
 
     results = []
 
-    with csvfile_handle as csvfile:
-        reader = csv.DictReader(csvfile)
+    try:
+        with csvfile_handle as csvfile:
+            reader = csv.DictReader(csvfile)
 
-        if not REQUIRED_COLUMNS.issubset(reader.fieldnames or []):
-            # Use sorted() for a stable, client-friendly column list instead of Python set repr
-            with jobs_lock:
-                jobs[job_id] = {
-                    "status": "failed",
-                    "error": f"CSV must contain columns: {', '.join(sorted(REQUIRED_COLUMNS))}",
-                    "created_at": jobs[job_id].get("created_at")
-                }
-            return
+            if not REQUIRED_COLUMNS.issubset(reader.fieldnames or []):
+                # Use sorted() for a stable, client-friendly column list instead of Python set repr
+                with jobs_lock:
+                    jobs[job_id] = {
+                        "status": "failed",
+                        "error": f"CSV must contain columns: {', '.join(sorted(REQUIRED_COLUMNS))}",
+                        "created_at": jobs.get(job_id, {}).get("created_at")
+                    }
+                return
 
-        try:
             for row in reader:
                 analysis = analyze_with_ai(row["review_text"])
                 results.append({
                     "review_id": row["review_id"],
                     "analysis": analysis
                 })
-        except Exception as e:
-            # If OpenAI call fails (rate limit, network error, auth error),
-            # mark job as failed so the client is not stuck polling "processing"
-            logger.error("OpenAI call failed during CSV processing: %s", e)
-            with jobs_lock:
-                jobs[job_id] = {"status": "failed", "error": "AI processing failed", "created_at": jobs.get(job_id, {}).get("created_at")}
-            return
 
-    try:
         sentiment_counts = Counter(
             item["analysis"][KEY_SENTIMENT]
             for item in results
@@ -195,8 +187,10 @@ def process_csv_job(job_id: str):
                 ]
             }
     except Exception as e:
+        # Catches unexpected errors: CSV decoding, header parsing, OpenAI failures, aggregation errors
+        logger.error("Unexpected error in process_csv_job: %s", e)
         with jobs_lock:
-            jobs[job_id] = {"status": "failed", "error": str(e), "created_at": jobs.get(job_id, {}).get("created_at")}
+            jobs[job_id] = {"status": "failed", "error": "CSV processing failed unexpectedly", "created_at": jobs.get(job_id, {}).get("created_at")}
 
 
 @app.get("/")
@@ -251,7 +245,7 @@ def get_job(job_id: str):
 
 
 @app.get("/jobs/{job_id}/results")
-def get_job_results(job_id: str, page: int = 1, limit: int = 100):
+def get_job_results(job_id: str, page: int = Query(1, ge=1), limit: int = Query(100, ge=1, le=1000)):
     """
     Returns paginated per-review analysis results for a completed job.
     Use GET /jobs/{job_id} to check status before fetching results.

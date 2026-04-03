@@ -215,7 +215,7 @@ GET /jobs/abc-123/results?page=1&limit=100
 }
 ```
 
-Jobs are kept in memory for status lookup. Cleanup is performed opportunistically during subsequent `POST /analyze-csv` requests rather than by a background timer. Long-running jobs in `processing` status may remain queryable for up to 2 hours before they are eligible for eviction.
+Jobs are kept in memory for status lookup. This in-memory store is **per-process**, so the current implementation is suitable only for a single-worker deployment. In a multi-worker `uvicorn`/`gunicorn` setup, `POST /analyze-csv` and subsequent `GET /jobs/{job_id}` requests may be routed to different workers, causing jobs to appear missing and return `404`. For production deployments with multiple workers or instances, a shared store such as Redis or a database is required. Cleanup is performed opportunistically during subsequent `POST /analyze-csv` requests rather than by a background timer. Long-running jobs in `processing` status may remain queryable for up to 2 hours before they are eligible for eviction.
 
 ---
 

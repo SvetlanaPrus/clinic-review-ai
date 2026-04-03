@@ -6,8 +6,9 @@ import os
 from dotenv import load_dotenv
 from openai import OpenAI
 from collections import Counter
+from pathlib import Path
 
-CSV_FILE_PATH = "../data/raw/reviews_sample.csv"
+CSV_FILE_PATH = Path(__file__).resolve().parent.parent / "data" / "raw" / "reviews_sample.csv"
 OPENAI_MODEL = "gpt-4.1-mini"
 KEY_SENTIMENT = "sentiment"
 KEY_TOPICS = "topics"
@@ -60,7 +61,7 @@ Review:
 
     try:
         parsed = json.loads(clean_output)
-    except:
+    except (json.JSONDecodeError, TypeError):
         parsed = {"error": "Invalid JSON from AI", "raw": raw_output}
 
     return parsed
@@ -73,12 +74,12 @@ def read_root():
 
 @app.post("/analyze")
 def analyze_review(review: Review):
-        analysis = analyze_with_ai(review.review_text)
+    analysis = analyze_with_ai(review.review_text)
 
-        return {
-            "review_id": review.review_id,
-            "analysis": analysis
-        }
+    return {
+        "review_id": review.review_id,
+        "analysis": analysis
+    }
 
 
 @app.get("/analyze-csv")
@@ -92,8 +93,8 @@ def analyze_csv():
             analysis = analyze_with_ai(row["review_text"])
 
             results.append({
-            "review_id": row["review_id"],
-            "analysis": analysis
+                "review_id": row["review_id"],
+                "analysis": analysis
             })
 
     sentiment_counts = Counter(

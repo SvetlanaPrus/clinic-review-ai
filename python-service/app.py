@@ -148,38 +148,43 @@ def process_csv_job(job_id: str):
                 jobs[job_id] = {"status": "failed", "error": str(e), "created_at": jobs[job_id].get("created_at")}
             return
 
-    sentiment_counts = Counter(
-        item["analysis"][KEY_SENTIMENT]
-        for item in results
-        if isinstance(item.get("analysis"), dict)
-        and KEY_SENTIMENT in item["analysis"]
-    )
+    try:
+        sentiment_counts = Counter(
+            item["analysis"][KEY_SENTIMENT]
+            for item in results
+            if isinstance(item.get("analysis"), dict)
+            and KEY_SENTIMENT in item["analysis"]
+            and isinstance(item["analysis"][KEY_SENTIMENT], str)
+        )
 
-    topics = []
+        topics = []
 
-    for item in results:
-        analysis = item.get("analysis")
-        if isinstance(analysis, dict) and KEY_TOPICS in analysis and isinstance(analysis[KEY_TOPICS], list):
-            for topic in analysis[KEY_TOPICS]:
-                if isinstance(topic, str):
-                    normalized_topic = topic.strip()
-                    if normalized_topic:
-                        topics.append(normalized_topic)
+        for item in results:
+            analysis = item.get("analysis")
+            if isinstance(analysis, dict) and KEY_TOPICS in analysis and isinstance(analysis[KEY_TOPICS], list):
+                for topic in analysis[KEY_TOPICS]:
+                    if isinstance(topic, str):
+                        normalized_topic = topic.strip()
+                        if normalized_topic:
+                            topics.append(normalized_topic)
 
-    topic_counts = Counter(topics)
+        topic_counts = Counter(topics)
 
-    # Store completed results so the client can retrieve them via GET /jobs/{job_id}
-    with jobs_lock:
-        jobs[job_id] = {
-            "status": "done",
-            "created_at": jobs[job_id].get("created_at"),
-            "results": results,
-            "sentiment_summary": dict(sentiment_counts),
-            "top_topics": [
-                {"topic": topic, "count": count}
-                for topic, count in topic_counts.most_common()
-            ]
-        }
+        # Store completed results so the client can retrieve them via GET /jobs/{job_id}
+        with jobs_lock:
+            jobs[job_id] = {
+                "status": "done",
+                "created_at": jobs[job_id].get("created_at"),
+                "results": results,
+                "sentiment_summary": dict(sentiment_counts),
+                "top_topics": [
+                    {"topic": topic, "count": count}
+                    for topic, count in topic_counts.most_common()
+                ]
+            }
+    except Exception as e:
+        with jobs_lock:
+            jobs[job_id] = {"status": "failed", "error": str(e), "created_at": jobs[job_id].get("created_at")}
 
 
 @app.get("/")

@@ -4,6 +4,8 @@ import json
 import csv
 import os
 import uuid
+import time
+import logging
 from dotenv import load_dotenv
 from openai import OpenAI
 from collections import Counter
@@ -21,6 +23,19 @@ REQUIRED_COLUMNS = {"review_id", "review_text"}
 # In-memory job store: maps job_id -> job status and results.
 # For production, replace with a persistent store (e.g. Redis, database).
 jobs: dict = {}
+
+# Jobs older than this will be evicted from memory on each new request
+JOB_TTL_SECONDS = 3600  # 1 hour
+
+
+def evict_expired_jobs():
+    """Remove jobs older than JOB_TTL_SECONDS to prevent unbounded memory growth."""
+    now = time.time()
+    expired = [jid for jid, job in jobs.items() if now - job.get("created_at", now) > JOB_TTL_SECONDS]
+    for jid in expired:
+        del jobs[jid]
+
+logger = logging.getLogger(__name__)
 
 # init OpenAI
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
@@ -69,8 +84,8 @@ Review:
     try:
         parsed = json.loads(clean_output)
     except (json.JSONDecodeError, TypeError):
-        # Log raw output server-side for debugging; do not expose it to the client
-        print(f"Failed to parse AI output: {raw_output}")
+        # Log only a short snippet to avoid capturing sensitive review content (PII) in logs
+        logger.warning("Failed to parse AI output: %.100s...", raw_output)
         parsed = {"error": "Invalid JSON from AI"}
 
     return parsed
@@ -101,12 +116,18 @@ def process_csv_job(job_id: str):
             }
             return
 
-        for row in reader:
-            analysis = analyze_with_ai(row["review_text"])
-            results.append({
-                "review_id": row["review_id"],
-                "analysis": analysis
-            })
+        try:
+            for row in reader:
+                analysis = analyze_with_ai(row["review_text"])
+                results.append({
+                    "review_id": row["review_id"],
+                    "analysis": analysis
+                })
+        except Exception as e:
+            # If OpenAI call fails (rate limit, network error, auth error),
+            # mark job as failed so the client is not stuck polling "processing"
+            jobs[job_id] = {"status": "failed", "error": str(e)}
+            return
 
     sentiment_counts = Counter(
         item["analysis"][KEY_SENTIMENT]
@@ -161,10 +182,13 @@ def analyze_csv(background_tasks: BackgroundTasks):
     Starts CSV analysis as a background job.
     Returns job_id immediately — client should poll GET /jobs/{job_id} for results.
     """
+    # Evict expired jobs on each new request to prevent unbounded memory growth
+    evict_expired_jobs()
+
     job_id = str(uuid.uuid4())
 
     # Mark job as processing before starting background task
-    jobs[job_id] = {"status": "processing"}
+    jobs[job_id] = {"status": "processing", "created_at": time.time()}
 
     background_tasks.add_task(process_csv_job, job_id)
 

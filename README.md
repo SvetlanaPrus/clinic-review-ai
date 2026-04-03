@@ -106,6 +106,43 @@ mkdir -p data/raw
 
 Alternatively, set `REVIEWS_CSV_PATH` in `.env` to point to any CSV file.
 
+## Using the /analyze-csv endpoint
+
+CSV analysis runs as a background job. The flow is:
+
+**1. Start the job:**
+```
+POST /analyze-csv
+```
+Response:
+```json
+{"job_id": "abc-123", "status": "processing"}
+```
+
+**2. Poll for results:**
+```
+GET /jobs/abc-123
+```
+While processing:
+```json
+{"status": "processing"}
+```
+When done:
+```json
+{
+  "status": "done",
+  "results": [...],
+  "sentiment_summary": {"positive": 5, "negative": 2, "neutral": 1},
+  "top_topics": [{"topic": "staff", "count": 4}, ...]
+}
+```
+If failed:
+```json
+{"status": "failed", "error": "..."}
+```
+
+Jobs are automatically removed from memory after 1 hour.
+
 ---
 
 ## Current Status

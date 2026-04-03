@@ -256,7 +256,10 @@ def get_job(job_id: str):
     if job_snapshot is None:
         raise HTTPException(status_code=404, detail=f"Job not found: {job_id}")
 
-    return {k: v for k, v in job_snapshot.items() if k != "results"}
+    return {
+        **{k: v for k, v in job_snapshot.items() if k != "results"},
+        "job_id": job_id,
+    }
 
 
 @app.get("/jobs/{job_id}/results")

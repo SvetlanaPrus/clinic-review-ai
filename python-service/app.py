@@ -35,6 +35,8 @@ jobs_lock = threading.Lock()
 JOB_TTL_SECONDS = 3600  # 1 hour
 # Processing jobs get a longer TTL so genuinely active work is not evicted too aggressively,
 # while jobs stuck in "processing" after a crash/failure do not accumulate forever.
+# 2 hours is sufficient: even a 1000-row CSV at ~1s/row takes ~17 minutes, well within this window.
+# If processing times ever grow to hours, replace this with a heartbeat/last_updated approach.
 PROCESSING_JOB_TTL_SECONDS = 7200  # 2 hours
 
 
@@ -193,7 +195,7 @@ def process_csv_job(job_id: str):
             }
     except Exception as e:
         # Catches unexpected errors: CSV decoding, header parsing, OpenAI failures, aggregation errors
-        logger.error("Unexpected error in process_csv_job: %s", e)
+        logger.exception("Unexpected error in process_csv_job: %s", e)
         with jobs_lock:
             jobs[job_id] = {"status": "failed", "error": "CSV processing failed unexpectedly", "created_at": jobs.get(job_id, {}).get("created_at")}
 

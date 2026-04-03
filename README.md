@@ -161,7 +161,7 @@ GET /jobs/abc-123/results?page=1&limit=100
 }
 ```
 
-Jobs are kept in memory for status lookup. Stale jobs older than 1 hour are removed opportunistically during subsequent `POST /analyze-csv` requests, rather than by a background timer.
+Jobs are kept in memory for status lookup. Cleanup is performed opportunistically during subsequent `POST /analyze-csv` requests rather than by a background timer. Long-running jobs in `processing` status may remain queryable for up to 2 hours before they are eligible for eviction.
 
 ---
 

@@ -98,9 +98,12 @@ Review:
 
     try:
         parsed = json.loads(clean_output)
-    except (json.JSONDecodeError, TypeError):
-        # Log only a short snippet to avoid capturing sensitive review content (PII) in logs
-        logger.warning("Failed to parse AI output: %.100s...", raw_output)
+    except (json.JSONDecodeError, TypeError) as exc:
+        # Omit raw_output from logs entirely — it may contain sensitive review content (PII)
+        logger.warning(
+            "Failed to parse AI output; returning fallback error. exception_type=%s",
+            type(exc).__name__,
+        )
         parsed = {"error": "Invalid JSON from AI"}
 
     return parsed
@@ -117,6 +120,12 @@ def process_csv_job(job_id: str):
     except FileNotFoundError:
         with jobs_lock:
             jobs[job_id] = {"status": "failed", "error": f"CSV file not found: {CSV_FILE_PATH}", "created_at": jobs[job_id].get("created_at")}
+        return
+    except (OSError, TypeError) as e:
+        # Catch other file-open errors (e.g. PermissionError, IsADirectoryError, invalid path type)
+        # so the job is marked failed instead of stuck in "processing"
+        with jobs_lock:
+            jobs[job_id] = {"status": "failed", "error": str(e), "created_at": jobs[job_id].get("created_at")}
         return
 
     results = []

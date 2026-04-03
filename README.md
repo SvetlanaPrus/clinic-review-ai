@@ -125,12 +125,18 @@ GET /jobs/abc-123
 ```
 While processing:
 ```json
-{"status": "processing"}
+{
+  "job_id": "abc-123",
+  "status": "processing",
+  "created_at": 1704067200.0
+}
 ```
 When done:
 ```json
 {
+  "job_id": "abc-123",
   "status": "done",
+  "created_at": 1704067200.0,
   "results": [...],
   "sentiment_summary": {"positive": 5, "negative": 2, "neutral": 1},
   "top_topics": [{"topic": "staff", "count": 4}, ...]
@@ -138,7 +144,7 @@ When done:
 ```
 If failed:
 ```json
-{"status": "failed", "error": "..."}
+{"job_id": "abc-123", "status": "failed", "created_at": 1704067200.0, "error": "..."}
 ```
 
 Jobs are kept in memory for status lookup. Stale jobs older than 1 hour are removed opportunistically during subsequent `POST /analyze-csv` requests, rather than by a background timer.

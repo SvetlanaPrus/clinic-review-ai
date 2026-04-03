@@ -118,14 +118,16 @@ def process_csv_job(job_id: str):
     try:
         csvfile_handle = open(CSV_FILE_PATH, newline="", encoding="utf-8")
     except FileNotFoundError:
+        logger.error("CSV file not found: %s", CSV_FILE_PATH)
         with jobs_lock:
-            jobs[job_id] = {"status": "failed", "error": f"CSV file not found: {CSV_FILE_PATH}", "created_at": jobs[job_id].get("created_at")}
+            jobs[job_id] = {"status": "failed", "error": "CSV file not found on server", "created_at": jobs.get(job_id, {}).get("created_at")}
         return
     except (OSError, TypeError) as e:
         # Catch other file-open errors (e.g. PermissionError, IsADirectoryError, invalid path type)
         # so the job is marked failed instead of stuck in "processing"
+        logger.error("Failed to open CSV file: %s", e)
         with jobs_lock:
-            jobs[job_id] = {"status": "failed", "error": str(e), "created_at": jobs[job_id].get("created_at")}
+            jobs[job_id] = {"status": "failed", "error": "Failed to open CSV file", "created_at": jobs.get(job_id, {}).get("created_at")}
         return
 
     results = []
@@ -153,8 +155,9 @@ def process_csv_job(job_id: str):
         except Exception as e:
             # If OpenAI call fails (rate limit, network error, auth error),
             # mark job as failed so the client is not stuck polling "processing"
+            logger.error("OpenAI call failed during CSV processing: %s", e)
             with jobs_lock:
-                jobs[job_id] = {"status": "failed", "error": str(e), "created_at": jobs[job_id].get("created_at")}
+                jobs[job_id] = {"status": "failed", "error": "AI processing failed", "created_at": jobs.get(job_id, {}).get("created_at")}
             return
 
     try:
@@ -179,11 +182,11 @@ def process_csv_job(job_id: str):
 
         topic_counts = Counter(topics)
 
-        # Store completed results so the client can retrieve them via GET /jobs/{job_id}
+        # Store completed results; results are exposed separately via GET /jobs/{job_id}/results
         with jobs_lock:
             jobs[job_id] = {
                 "status": "done",
-                "created_at": jobs[job_id].get("created_at"),
+                "created_at": jobs.get(job_id, {}).get("created_at"),
                 "results": results,
                 "sentiment_summary": dict(sentiment_counts),
                 "top_topics": [
@@ -193,7 +196,7 @@ def process_csv_job(job_id: str):
             }
     except Exception as e:
         with jobs_lock:
-            jobs[job_id] = {"status": "failed", "error": str(e), "created_at": jobs[job_id].get("created_at")}
+            jobs[job_id] = {"status": "failed", "error": str(e), "created_at": jobs.get(job_id, {}).get("created_at")}
 
 
 @app.get("/")
@@ -234,8 +237,9 @@ def analyze_csv(background_tasks: BackgroundTasks):
 @app.get("/jobs/{job_id}")
 def get_job(job_id: str):
     """
-    Returns the current status and results of a background job.
+    Returns job status and aggregate summaries (sentiment_summary, top_topics).
     Status values: "processing" | "done" | "failed"
+    Per-review results are available via GET /jobs/{job_id}/results.
     """
     with jobs_lock:
         job = jobs.get(job_id)
@@ -243,4 +247,34 @@ def get_job(job_id: str):
     if job is None:
         raise HTTPException(status_code=404, detail=f"Job not found: {job_id}")
 
-    return job
+    return {k: v for k, v in job.items() if k != "results"}
+
+
+@app.get("/jobs/{job_id}/results")
+def get_job_results(job_id: str, page: int = 1, limit: int = 100):
+    """
+    Returns paginated per-review analysis results for a completed job.
+    Use GET /jobs/{job_id} to check status before fetching results.
+    """
+    with jobs_lock:
+        job = jobs.get(job_id)
+
+    if job is None:
+        raise HTTPException(status_code=404, detail=f"Job not found: {job_id}")
+
+    if job.get("status") != "done":
+        raise HTTPException(status_code=409, detail=f"Job is not done yet: status={job.get('status')}")
+
+    results = job.get("results", [])
+    total = len(results)
+    start = (page - 1) * limit
+    end = start + limit
+
+    return {
+        "job_id": job_id,
+        "page": page,
+        "limit": limit,
+        "total": total,
+        "pages": (total + limit - 1) // limit,
+        "results": results[start:end],
+    }

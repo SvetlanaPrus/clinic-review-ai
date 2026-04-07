@@ -70,9 +70,8 @@ class Review(BaseModel):
     rating: int
     review_text: str
 
-
-def analyze_with_ai(text: str):
-    prompt = f"""
+def build_review_prompt(text: str):
+    return f"""
 Analyze this clinic review.
 
 Return ONLY valid JSON with this structure:
@@ -88,6 +87,9 @@ Return ONLY valid JSON with this structure:
 Review:
 {text}
 """
+
+def analyze_with_ai(text: str):
+    prompt = build_review_prompt(text)
 
     response = client.chat.completions.create(
         model=OPENAI_MODEL,

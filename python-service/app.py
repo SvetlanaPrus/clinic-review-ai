@@ -70,6 +70,7 @@ class Review(BaseModel):
     rating: int
     review_text: str
 
+
 def build_review_prompt(text: str):
     return f"""
 Analyze this clinic review.
@@ -87,6 +88,7 @@ Return ONLY valid JSON with this structure:
 Review:
 {text}
 """
+
 
 def analyze_with_ai(text: str):
     prompt = build_review_prompt(text)
@@ -187,6 +189,13 @@ def process_csv_job(job_id: str):
 
         topic_counts = Counter(topics)
 
+        summary_prompt = build_summary_prompt(results)
+        summary_response = client.chat.completions.create(
+            model=OPENAI_MODEL,
+            messages=[{"role": "user", "content": summary_prompt}]
+        )
+        overall_summary = summary_response.choices[0].message.content
+
         # Store completed results; results are exposed separately via GET /jobs/{job_id}/results
         with jobs_lock:
             jobs[job_id] = {
@@ -197,13 +206,41 @@ def process_csv_job(job_id: str):
                 "top_topics": [
                     {"topic": topic, "count": count}
                     for topic, count in topic_counts.most_common()
-                ]
+                ],
+                "overall_summary": overall_summary,
             }
     except Exception as e:
         # Catches unexpected errors: CSV decoding, header parsing, OpenAI failures, aggregation errors
         logger.exception("Unexpected error in process_csv_job: %s", e)
         with jobs_lock:
             jobs[job_id] = {"status": "failed", "error": "CSV processing failed unexpectedly", "created_at": jobs.get(job_id, {}).get("created_at")}
+
+
+def build_summary_prompt(results):
+    reviews_text = ""
+
+    for item in results:
+        analysis = item.get("analysis", {})
+        if not isinstance(analysis, dict) or "summary" not in analysis or "sentiment" not in analysis:
+            continue
+        summary = analysis["summary"]
+        sentiment = analysis["sentiment"]
+        reviews_text += f"- {sentiment}: {summary}\n"
+
+    return f"""
+You are analyzing patient feedback for a clinic.
+
+Here are summarized reviews:
+{reviews_text}
+
+Write a short overall summary of the clinic performance.
+Focus on:
+- main strengths
+- main problems
+- what should be improved
+
+Keep it short and clear.
+"""
 
 
 @app.get("/")

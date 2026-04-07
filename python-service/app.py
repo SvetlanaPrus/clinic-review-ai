@@ -19,6 +19,7 @@ CSV_FILE_PATH = os.getenv("REVIEWS_CSV_PATH") or Path(__file__).resolve().parent
 OPENAI_MODEL = "gpt-4.1-mini"
 KEY_SENTIMENT = "sentiment"
 KEY_TOPICS = "topics"
+KEY_SUMMARY = "summary"
 REQUIRED_COLUMNS = {"review_id", "review_text"}
 
 # In-memory job store: maps job_id -> job status and results.
@@ -192,7 +193,7 @@ def process_csv_job(job_id: str):
         usable_results = [
             item for item in results
             if isinstance(item.get("analysis"), dict)
-            and "summary" in item["analysis"]
+            and KEY_SUMMARY in item["analysis"]
             and KEY_SENTIMENT in item["analysis"]
         ]
         overall_summary = None
@@ -232,7 +233,7 @@ def build_summary_prompt(results):
 
     for item in results:
         analysis = item["analysis"]
-        lines.append(f"- {analysis['sentiment']}: {analysis['summary']}")
+        lines.append(f"- {analysis[KEY_SENTIMENT]}: {analysis[KEY_SUMMARY]}")
 
     reviews_text = "\n".join(lines)
 
@@ -296,7 +297,8 @@ def get_job(job_id: str):
     Returns job status and aggregate summaries.
     Status values: "processing" | "done" | "failed"
     sentiment_summary, top_topics, and overall_summary are only present when status == "done".
-    overall_summary is null when no usable review analyses were available for summarization.
+    overall_summary is null when no usable review analyses were available for summarization,
+    or when summary generation was attempted but failed.
     Per-review results are available via GET /jobs/{job_id}/results.
     """
     with jobs_lock:

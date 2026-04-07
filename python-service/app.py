@@ -189,12 +189,21 @@ def process_csv_job(job_id: str):
 
         topic_counts = Counter(topics)
 
-        summary_prompt = build_summary_prompt(results)
-        summary_response = client.chat.completions.create(
-            model=OPENAI_MODEL,
-            messages=[{"role": "user", "content": summary_prompt}]
-        )
-        overall_summary = summary_response.choices[0].message.content
+        usable_results = [
+            item for item in results
+            if isinstance(item.get("analysis"), dict)
+            and "summary" in item["analysis"]
+            and "sentiment" in item["analysis"]
+        ]
+        if usable_results:
+            summary_prompt = build_summary_prompt(usable_results[:100])
+            summary_response = client.chat.completions.create(
+                model=OPENAI_MODEL,
+                messages=[{"role": "user", "content": summary_prompt}]
+            )
+            overall_summary = summary_response.choices[0].message.content
+        else:
+            overall_summary = None
 
         # Store completed results; results are exposed separately via GET /jobs/{job_id}/results
         with jobs_lock:
@@ -217,15 +226,13 @@ def process_csv_job(job_id: str):
 
 
 def build_summary_prompt(results):
-    reviews_text = ""
+    lines = []
 
     for item in results:
-        analysis = item.get("analysis", {})
-        if not isinstance(analysis, dict) or "summary" not in analysis or "sentiment" not in analysis:
-            continue
-        summary = analysis["summary"]
-        sentiment = analysis["sentiment"]
-        reviews_text += f"- {sentiment}: {summary}\n"
+        analysis = item["analysis"]
+        lines.append(f"- {analysis['sentiment']}: {analysis['summary']}")
+
+    reviews_text = "\n".join(lines)
 
     return f"""
 You are analyzing patient feedback for a clinic.
@@ -284,8 +291,9 @@ def analyze_csv(background_tasks: BackgroundTasks):
 @app.get("/jobs/{job_id}")
 def get_job(job_id: str):
     """
-    Returns job status and aggregate summaries (sentiment_summary, top_topics).
+    Returns job status and aggregate summaries (sentiment_summary, top_topics, overall_summary).
     Status values: "processing" | "done" | "failed"
+    overall_summary is null when no usable review analyses were available for summarization.
     Per-review results are available via GET /jobs/{job_id}/results.
     """
     with jobs_lock:

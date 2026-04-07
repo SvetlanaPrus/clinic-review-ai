@@ -193,17 +193,19 @@ def process_csv_job(job_id: str):
             item for item in results
             if isinstance(item.get("analysis"), dict)
             and "summary" in item["analysis"]
-            and "sentiment" in item["analysis"]
+            and KEY_SENTIMENT in item["analysis"]
         ]
+        overall_summary = None
         if usable_results:
-            summary_prompt = build_summary_prompt(usable_results[:100])
-            summary_response = client.chat.completions.create(
-                model=OPENAI_MODEL,
-                messages=[{"role": "user", "content": summary_prompt}]
-            )
-            overall_summary = summary_response.choices[0].message.content
-        else:
-            overall_summary = None
+            try:
+                summary_prompt = build_summary_prompt(usable_results[:100])
+                summary_response = client.chat.completions.create(
+                    model=OPENAI_MODEL,
+                    messages=[{"role": "user", "content": summary_prompt}]
+                )
+                overall_summary = summary_response.choices[0].message.content
+            except Exception:
+                logger.exception("Failed to generate overall_summary; job will complete without it")
 
         # Store completed results; results are exposed separately via GET /jobs/{job_id}/results
         with jobs_lock:
@@ -291,8 +293,9 @@ def analyze_csv(background_tasks: BackgroundTasks):
 @app.get("/jobs/{job_id}")
 def get_job(job_id: str):
     """
-    Returns job status and aggregate summaries (sentiment_summary, top_topics, overall_summary).
+    Returns job status and aggregate summaries.
     Status values: "processing" | "done" | "failed"
+    sentiment_summary, top_topics, and overall_summary are only present when status == "done".
     overall_summary is null when no usable review analyses were available for summarization.
     Per-review results are available via GET /jobs/{job_id}/results.
     """

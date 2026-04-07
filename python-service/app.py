@@ -240,9 +240,10 @@ def build_summary_prompt(results):
 
     for item in results:
         analysis = item["analysis"]
-        sentiment = analysis[KEY_SENTIMENT][:50]
-        summary = analysis[KEY_SUMMARY][:500]
-        lines.append(f"<review sentiment=\"{sentiment}\">{summary}</review>")
+        lines.append(json.dumps({
+            "sentiment": analysis[KEY_SENTIMENT][:50],
+            "summary": analysis[KEY_SUMMARY][:500],
+        }, ensure_ascii=False))
 
     reviews_text = "\n".join(lines)
 

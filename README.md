@@ -183,9 +183,12 @@ When done:
   "status": "done",
   "created_at": 1704067200.0,
   "sentiment_summary": {"positive": 5, "negative": 2, "neutral": 1},
-  "top_topics": [{"topic": "staff", "count": 4}, ...]
+  "top_topics": [{"topic": "staff", "count": 4}, ...],
+  "overall_summary": "The clinic's main strengths are... However, patients consistently report..."
 }
 ```
+
+`overall_summary` is `null` when no usable review analyses were available, or when summary generation failed.
 
 If failed:
 
@@ -230,11 +233,13 @@ Implemented:
 - CSV-based data input with background job processing
 - integration with OpenAI API
 - paginated per-review results
+- overall clinic summary generated after CSV analysis (`overall_summary` field)
 
 Planned:
 
 - integration with external review platforms
 - report visualization
+- authentication/authorization for API endpoints (the API currently has no auth layer — `overall_summary` and per-review data contain free-form patient text and should be protected before production use)
 
 ---
 
